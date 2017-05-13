@@ -1,3 +1,4 @@
 This is my first demo file
+time to mess up git
 time to play with git
 Modifying the first file
