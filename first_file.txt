@@ -1,4 +1,0 @@
-This is my first demo file
-time to mess up git
-time to fuck up with git
-Modifying the first file
