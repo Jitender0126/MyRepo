@@ -3,7 +3,6 @@ import com.jcraft.jsch.*
 import org.apache.ivy.plugins.repository.ssh.SshCache.*
 import org.apache.commons.io.IOUtils
 import java.nio.charset.StandardCharsets
-import java.nio.charset.StandardCharsets
 import org.apache.nifi.processor.io.StreamCallback
 
 class FileNotFound extends Exception {
@@ -11,20 +10,23 @@ class FileNotFound extends Exception {
         super(msg)
 }
 }
-
+// get session
 def flowFile = session.get()
 if(!flowFile) return
 try
 {
 JSch jsch = new JSch();
-// get session
+
+//get attributes
 nasUser=flowFile.getAttribute('nasuser')
 nasIP=flowFile.getAttribute('nasip')
 landingPath=flowFile.getAttribute('landingPath')
 filePattern=flowFile.getAttribute('filepattern')
 keyPath=flowFile.getAttribute('rsaKeyPath')
 
+//create session
 Session jsession = jsch.getSession(nasUser, nasIP, 22);
+	
 //authenticate via RSA key
 jsch.addIdentity(keyPath);
 Properties config = new Properties();
@@ -40,21 +42,17 @@ String file_list=''
 file_name=flowFile.getAttribute('filepattern')
 //fetch the list of file based on pattern
 Vector files=[]
-try{ files = sftp.ls(landingPath+'/'+file_name)}
+try{ files = sftp.ls(landingPath+'/'+filePattern)}
 catch(Exception e)
 {
-	throw new FileNotFound("file not found : "+file_name+"  "+e.toString())
+	sftp.disconnect();
+	jsession.disconnect();
+	throw new FileNotFound("file not found : "+filePattern+"  "+e.toString())
 }
 if (files.size()==0){
 		sftp.disconnect();
 		jsession.disconnect();
-//		flowFile = session.putAttribute(flowFile, "v_nasuser", nasUser)
-//		flowFile = session.putAttribute(flowFile, "v_nasIP", nasIP)
-//		flowFile = session.putAttribute(flowFile, "v_landingPath", landingPath)
-//		flowFile = session.putAttribute(flowFile, "v_filePattern", filePattern)
-//		flowFile = session.putAttribute(flowFile, "v_keyPath", keyPath)
-//		session.transfer(flowFile,REL_FAILURE)
-		throw new FileNotFound("file not found"+file_name)
+		throw new FileNotFound("file not found :"+filePattern)
 }
 for (Object obj : files) {
 file=String.format(obj.getFilename())
@@ -65,7 +63,7 @@ file=String.format(obj.getFilename())
         else{
 // loop through the file list and create a child flowfile, append attribute
 			newFlowFile = session.create(flowFile)
-			long fileSize = sftp.lstat("uploads/hdf-sftp-mx/"+file).getSize()
+			long fileSize = sftp.lstat(landingPath+'/'+file).getSize()
 			newFlowFile = session.putAttribute(newFlowFile, "file_name", file)
 			newFlowFile = session.putAttribute(newFlowFile, "file_size", fileSize.toString())
 
@@ -83,7 +81,7 @@ file=String.format(obj.getFilename())
 			session.transfer(newFlowFile, REL_SUCCESS)
 }
 }
-//after all child flowfile are routed to success delete the original flowfile
+//after all child flowfile are routed to success, delete the original flowfile
 // disconnect the sftp channel and session
 session.remove(flowFile)
 sftp.disconnect();
@@ -95,7 +93,7 @@ catch(FileNotFound e){
 }
 catch(Exception e)
 {
-// in case of fire, pull, push and over n out
+// in case of fire
 		flowFile=session.putAttribute(flowFile,"error_msg",e.toString()+" "+e.getStackTrace())
 		session.remove(newFlowFile)
 		session.transfer(flowFile,REL_FAILURE)
